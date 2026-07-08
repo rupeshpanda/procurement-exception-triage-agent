@@ -137,84 +137,98 @@ export async function runProcurementAgent(
       return complete(finalAnswer);
     }
 
-    if (!turn.toolUse) {
+    const requestedTools = turn.toolUses ?? (turn.toolUse ? [turn.toolUse] : []);
+    if (!requestedTools.length) {
       return complete("The model requested tool use but did not provide a tool call.");
     }
 
-    const toolName = turn.toolUse.name;
-    const toolInput = turn.toolUse.input;
-    emit(
-      createTraceEvent("tool_call", `Tool requested: ${toolName}`, "The hook will inspect this call before execution.", {
-        toolInput
-      })
-    );
-
-    const hookDecision = beforeToolExecutionHook({
-      toolName,
-      toolInput,
-      originalUserRequest: userRequest
-    });
-
-    emit(
-      createTraceEvent(
-        "hook_decision",
-        hookDecision.allowed ? "Hook allowed tool" : "Hook blocked and redirected tool",
-        hookDecision.reason,
-        hookDecision
-      )
-    );
-
-    const effectiveToolName = hookDecision.allowed
-      ? toolName
-      : hookDecision.redirectedToolName;
-    const effectiveInput = hookDecision.allowed
-      ? toolInput
-      : hookDecision.redirectedInput;
-
-    let attempt = 0;
-    let call = await callMcpTool(
-      effectiveToolName,
-      effectiveInput as ToolInputMap[typeof effectiveToolName]
-    );
-    while (shouldRetryToolResult(call.result, attempt)) {
-      attempt += 1;
+    if (requestedTools.length > 1) {
       emit(
         createTraceEvent(
-          "retry",
-          `Retrying ${effectiveToolName}`,
-          "The tool returned a retryable transient error.",
-          { attempt }
+          "learning_note",
+          `Parallel tool use: ${requestedTools.length} tools requested in one turn`,
+          "Claude asked for several tools at once. The orchestrator must execute every one and return all tool_result blocks together; leaving any tool_use unanswered is an API error."
         )
-      );
-      call = await callMcpTool(
-        effectiveToolName,
-        effectiveInput as ToolInputMap[typeof effectiveToolName]
       );
     }
 
-    emit(
-      createTraceEvent(
-        "mcp_route",
-        `Routed to ${call.server}`,
-        `The MCP client routed ${effectiveToolName} to the ${call.server} server.`
-      )
-    );
-    emit(
-      createTraceEvent("tool_result", `Result from ${effectiveToolName}`, JSON.stringify(call.result, null, 2))
-    );
+    // Every tool_use block must be answered with a matching tool_result.
+    for (const requested of requestedTools) {
+      const toolName = requested.name;
+      const toolInput = requested.input;
+      emit(
+        createTraceEvent("tool_call", `Tool requested: ${toolName}`, "The hook will inspect this call before execution.", {
+          toolInput
+        })
+      );
 
-    toolTraces.push({
-      toolName: effectiveToolName,
-      input: effectiveInput as Record<string, unknown>,
-      result: call.result,
-      server: call.server,
-      blockedByHook: !hookDecision.allowed
-    });
-    toolResults.push({
-      toolUseId: turn.toolUse.id,
-      toolName: effectiveToolName,
-      result: call.result
-    });
+      const hookDecision = beforeToolExecutionHook({
+        toolName,
+        toolInput,
+        originalUserRequest: userRequest
+      });
+
+      emit(
+        createTraceEvent(
+          "hook_decision",
+          hookDecision.allowed ? "Hook allowed tool" : "Hook blocked and redirected tool",
+          hookDecision.reason,
+          hookDecision
+        )
+      );
+
+      const effectiveToolName = hookDecision.allowed
+        ? toolName
+        : hookDecision.redirectedToolName;
+      const effectiveInput = hookDecision.allowed
+        ? toolInput
+        : hookDecision.redirectedInput;
+
+      let attempt = 0;
+      let call = await callMcpTool(
+        effectiveToolName,
+        effectiveInput as ToolInputMap[typeof effectiveToolName]
+      );
+      while (shouldRetryToolResult(call.result, attempt)) {
+        attempt += 1;
+        emit(
+          createTraceEvent(
+            "retry",
+            `Retrying ${effectiveToolName}`,
+            "The tool returned a retryable transient error.",
+            { attempt }
+          )
+        );
+        call = await callMcpTool(
+          effectiveToolName,
+          effectiveInput as ToolInputMap[typeof effectiveToolName]
+        );
+      }
+
+      emit(
+        createTraceEvent(
+          "mcp_route",
+          `Routed to ${call.server}`,
+          `The MCP client routed ${effectiveToolName} to the ${call.server} server.`
+        )
+      );
+      emit(
+        createTraceEvent("tool_result", `Result from ${effectiveToolName}`, JSON.stringify(call.result, null, 2))
+      );
+
+      toolTraces.push({
+        toolName: effectiveToolName,
+        input: effectiveInput as Record<string, unknown>,
+        result: call.result,
+        server: call.server,
+        blockedByHook: !hookDecision.allowed
+      });
+      toolResults.push({
+        toolUseId: requested.id,
+        toolName: effectiveToolName,
+        result: call.result
+      });
+    }
   }
 
   return complete(

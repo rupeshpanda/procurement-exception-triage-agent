@@ -16,7 +16,10 @@ export interface ModelUsage {
 export interface ModelTurn {
   stopReason: ModelStopReason;
   text?: string;
+  /** Single-tool convenience used by the mock planner and tests. */
   toolUse?: ModelToolUse;
+  /** All tool_use blocks from the turn. Claude may request tools in parallel. */
+  toolUses?: ModelToolUse[];
   usage?: ModelUsage;
 }
 

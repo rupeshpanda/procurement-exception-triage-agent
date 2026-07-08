@@ -42,22 +42,22 @@ export class AnthropicModelClient implements ModelClient {
       });
     }
 
+    // All tool_result blocks for a turn must go back in a single user message
+    // so every tool_use block from the previous assistant turn is answered.
     const newToolResults = context.toolResults.slice(this.appendedToolResults);
-    for (const toolResult of newToolResults) {
+    if (newToolResults.length) {
       this.messages.push({
         role: "user",
-        content: [
-          {
-            type: "tool_result",
-            tool_use_id: toolResult.toolUseId ?? toolResult.toolName,
-            content: JSON.stringify(toolResult.result, null, 2),
-            is_error:
-              typeof toolResult.result === "object" &&
-              toolResult.result !== null &&
-              "success" in toolResult.result &&
-              (toolResult.result as { success?: unknown }).success === false
-          }
-        ]
+        content: newToolResults.map((toolResult) => ({
+          type: "tool_result" as const,
+          tool_use_id: toolResult.toolUseId ?? toolResult.toolName,
+          content: JSON.stringify(toolResult.result, null, 2),
+          is_error:
+            typeof toolResult.result === "object" &&
+            toolResult.result !== null &&
+            "success" in toolResult.result &&
+            (toolResult.result as { success?: unknown }).success === false
+        }))
       });
     }
     this.appendedToolResults = context.toolResults.length;
@@ -106,15 +106,22 @@ export class AnthropicModelClient implements ModelClient {
       outputTokens: payload.usage?.output_tokens ?? 0
     };
 
-    const toolUse = payload.content.find((item) => item.type === "tool_use");
-    if (payload.stop_reason === "tool_use" && toolUse?.type === "tool_use") {
+    // Claude may request several tools in one turn (parallel tool use).
+    // Return them all; the orchestrator must answer every tool_use block.
+    const toolUses = payload.content.filter(
+      (item): item is Extract<AnthropicContentBlock, { type: "tool_use" }> =>
+        item.type === "tool_use"
+    );
+    if (payload.stop_reason === "tool_use" && toolUses.length) {
+      const mapped = toolUses.map((block) => ({
+        id: block.id,
+        name: block.name as ProcurementToolName,
+        input: block.input
+      }));
       return {
         stopReason: "tool_use",
-        toolUse: {
-          id: toolUse.id,
-          name: toolUse.name as ProcurementToolName,
-          input: toolUse.input
-        },
+        toolUse: mapped[0],
+        toolUses: mapped,
         usage
       };
     }
