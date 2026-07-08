@@ -184,22 +184,111 @@ export class MockModelClient implements ModelClient {
   }
 }
 
-function buildFinalAnswer(context: ModelClientContext) {
-  const lines = [
-    "Procurement triage complete.",
-    "",
-    "I used mock procurement data only. I did not approve payments, release invoices, close purchase orders, or modify production systems."
-  ];
+type LooseToolResult = {
+  success?: boolean;
+  data?: Record<string, unknown>;
+  error?: { errorCategory?: string; message?: string };
+};
 
-  for (const item of context.toolResults) {
-    lines.push("", `Tool: ${item.toolName}`, JSON.stringify(item.result, null, 2));
+function money(amount: unknown, currency = "USD") {
+  const value = Number(amount);
+  if (!Number.isFinite(value)) {
+    return "an unknown amount";
+  }
+  return `${currency === "USD" ? "$" : `${currency} `}${value.toLocaleString("en-US")}`;
+}
+
+function describePurchaseOrders(data: Record<string, unknown>) {
+  const orders = Array.isArray(data.purchaseOrders) ? data.purchaseOrders : [];
+  if (!orders.length) {
+    return "Purchase orders: no matching purchase orders were found.";
   }
 
-  if (context.toolResults.some((item) => item.toolName === "escalate_procurement_issue")) {
-    lines.push(
-      "",
-      "A human-review escalation was created where the request crossed a governance boundary."
-    );
+  const lines = orders.map((po) => {
+    const record = po as Record<string, unknown>;
+    const delay =
+      Number(record.daysDelayed) > 0
+        ? `delayed ${record.daysDelayed} days`
+        : `status ${record.status}`;
+    return `- ${record.poNumber} (${record.vendorName}): ${money(record.amount, String(record.currency ?? "USD"))}, ${delay}, goods receipt ${record.goodsReceiptStatus}, expected delivery ${record.expectedDeliveryDate}.`;
+  });
+
+  return ["Purchase orders:", ...lines].join("\n");
+}
+
+function describeInvoiceExceptions(data: Record<string, unknown>) {
+  const invoices = Array.isArray(data.invoiceExceptions) ? data.invoiceExceptions : [];
+  if (!invoices.length) {
+    return "Invoice exceptions: no matching invoice exceptions were found.";
+  }
+
+  const lines = invoices.map((invoice) => {
+    const record = invoice as Record<string, unknown>;
+    return `- ${record.invoiceNumber} (${record.vendorName}, ${money(record.amount, String(record.currency ?? "USD"))}, status ${record.status}): ${record.description}`;
+  });
+
+  return ["Invoice exceptions:", ...lines].join("\n");
+}
+
+function describeVendorHistory(data: Record<string, unknown>) {
+  const vendor = data.vendorHistory as Record<string, unknown> | undefined;
+  if (!vendor) {
+    return "Vendor history: no vendor record was found.";
+  }
+
+  const onTime =
+    typeof vendor.onTimeDeliveryRate === "number"
+      ? ` On-time delivery is ${Math.round(vendor.onTimeDeliveryRate * 100)}%.`
+      : "";
+
+  return `Vendor risk: ${vendor.vendorName} is rated ${String(vendor.riskLevel).toUpperCase()} risk with ${vendor.lateDeliveryCount} late deliveries, ${vendor.invoiceExceptionCount} invoice exceptions, and ${vendor.priorEscalationCount} prior escalations.${onTime} ${vendor.summary}`;
+}
+
+function describeFollowup(data: Record<string, unknown>) {
+  return `Follow-up created: ${data.taskId} — "${data.title}", due ${data.dueDate}, priority ${data.priority}. It tracks the work without approving any transaction.`;
+}
+
+function describeEscalation(data: Record<string, unknown>) {
+  return `Escalation created: ${data.escalationId} is pending human review (${data.riskLevel} risk). Reason: ${data.reason}`;
+}
+
+function buildFinalAnswer(context: ModelClientContext) {
+  const lines = ["Procurement triage complete. Here is what I found:"];
+
+  for (const item of context.toolResults) {
+    const result = item.result as LooseToolResult | undefined;
+    if (!result || typeof result !== "object") {
+      continue;
+    }
+
+    if (result.success === false) {
+      if (result.error?.errorCategory !== "permission") {
+        lines.push(
+          "",
+          `I could not complete ${item.toolName.replaceAll("_", " ")}: ${result.error?.message ?? "the tool returned an error."}`
+        );
+      }
+      continue;
+    }
+
+    const data = result.data ?? {};
+    switch (item.toolName) {
+      case "search_purchase_orders":
+        lines.push("", describePurchaseOrders(data));
+        break;
+      case "search_invoice_exceptions":
+        lines.push("", describeInvoiceExceptions(data));
+        break;
+      case "search_vendor_history":
+        lines.push("", describeVendorHistory(data));
+        break;
+      case "create_procurement_followup":
+        lines.push("", describeFollowup(data));
+        break;
+      case "escalate_procurement_issue":
+        lines.push("", describeEscalation(data));
+        break;
+    }
   }
 
   const permissionBlocked = context.toolResults.some((item) => {
@@ -215,6 +304,11 @@ function buildFinalAnswer(context: ModelClientContext) {
       "One requested action was not completed automatically because it requires human approval. The workflow server rejected it with a permission error, which is not retryable. Please route it to the accountable approver."
     );
   }
+
+  lines.push(
+    "",
+    "I used mock procurement data only. I did not approve payments, release invoices, close purchase orders, or modify production systems."
+  );
 
   return lines.join("\n");
 }

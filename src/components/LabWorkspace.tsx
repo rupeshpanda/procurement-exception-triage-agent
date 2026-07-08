@@ -196,55 +196,13 @@ export function LabWorkspace() {
             {error ? <p className="mt-3 text-sm text-[var(--danger)]">{error}</p> : null}
           </div>
 
-          {activeScenario ? (
-            <div className="rounded border border-[var(--accent)] bg-[#fbfaf5] p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--accent-strong)]">
-                Why this scenario matters — {activeScenario.audience}
-              </p>
-              <p className="mt-2 text-sm leading-6 text-zinc-800">
-                {activeScenario.executiveNarrative}
-              </p>
-              <ul className="mt-3 grid gap-1.5 text-sm leading-6 text-zinc-700">
-                {activeScenario.whatToWatch.map((item) => (
-                  <li key={item} className="flex gap-2">
-                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]" />
-                    {item}
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-3 rounded bg-zinc-100 px-3 py-2 text-xs leading-5 text-zinc-600">
-                <span className="font-semibold">Claude Architect exam concept:</span>{" "}
-                {activeScenario.examConcept}
-              </p>
-            </div>
-          ) : null}
-
-          <Panel title={isLoading ? "Agent Loop — Live" : "Agent Loop Timeline"}>
-            <div className="grid gap-3">
-              {timelineEvents.length ? (
-                timelineEvents.map((event, index) => (
-                  <TimelineRow key={event.id} event={event} index={index} />
-                ))
-              ) : (
-                <p className="text-sm leading-6 text-zinc-600">
-                  Run a request to watch the loop unfold step by step: model
-                  turn → stop reason → tool request → hook decision → MCP route
-                  → final response.
-                </p>
-              )}
-              {isLoading ? (
-                <div className="flex items-center gap-2 text-sm text-zinc-600">
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--accent)]" />
-                  Waiting for the next event…
-                </div>
-              ) : null}
-            </div>
-          </Panel>
-
           <Panel title="Agent Answer">
-            <pre className="whitespace-pre-wrap text-sm leading-6 text-zinc-800">
-              {response.finalAnswer || "Run a triage request to see the final answer."}
-            </pre>
+            <div className="whitespace-pre-wrap text-sm leading-7 text-zinc-800">
+              {response.finalAnswer ||
+                (isLoading
+                  ? "The agent is working — the answer will appear here."
+                  : "Run a triage request to see the final answer.")}
+            </div>
           </Panel>
 
           <Panel title="Executive Summary">
@@ -291,6 +249,51 @@ export function LabWorkspace() {
             </div>
           </Panel>
 
+          {activeScenario ? (
+            <div className="rounded border border-[var(--accent)] bg-[#fbfaf5] p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--accent-strong)]">
+                Why this scenario matters — {activeScenario.audience}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-zinc-800">
+                {activeScenario.executiveNarrative}
+              </p>
+              <ul className="mt-3 grid gap-1.5 text-sm leading-6 text-zinc-700">
+                {activeScenario.whatToWatch.map((item) => (
+                  <li key={item} className="flex gap-2">
+                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 rounded bg-zinc-100 px-3 py-2 text-xs leading-5 text-zinc-600">
+                <span className="font-semibold">Claude Architect exam concept:</span>{" "}
+                {activeScenario.examConcept}
+              </p>
+            </div>
+          ) : null}
+
+          <Panel title={isLoading ? "Agent Loop — Live" : "Agent Loop Timeline"}>
+            <div className="grid gap-3">
+              {timelineEvents.length ? (
+                timelineEvents.map((event, index) => (
+                  <TimelineRow key={event.id} event={event} index={index} />
+                ))
+              ) : (
+                <p className="text-sm leading-6 text-zinc-600">
+                  Run a request to watch the loop unfold step by step: model
+                  turn → stop reason → tool request → hook decision → MCP route
+                  → final response.
+                </p>
+              )}
+              {isLoading ? (
+                <div className="flex items-center gap-2 text-sm text-zinc-600">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--accent)]" />
+                  Waiting for the next event…
+                </div>
+              ) : null}
+            </div>
+          </Panel>
+
           <Panel title="Run Cost & Tokens">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <Metric label="Model Turns" value={String(response.usage.modelTurns)} />
@@ -317,15 +320,21 @@ export function LabWorkspace() {
             </p>
           </Panel>
 
-          <Panel title="Tool Result Data">
-            <textarea
-              className="min-h-72 w-full resize-y rounded border border-zinc-300 bg-zinc-50 px-3 py-3 font-mono text-xs leading-5 text-zinc-800 outline-none"
-              readOnly
-              value={
-                toolResultText ||
-                "Tool result data will appear here after the agent calls MCP tools."
-              }
-            />
+          <Panel title="Tool Result Data (raw)">
+            <details>
+              <summary className="cursor-pointer text-sm text-zinc-600 hover:text-zinc-900">
+                Show the raw structured JSON the MCP tools returned (hidden by
+                default — the agent answer above is the human-readable version)
+              </summary>
+              <textarea
+                className="mt-3 min-h-72 w-full resize-y rounded border border-zinc-300 bg-zinc-50 px-3 py-3 font-mono text-xs leading-5 text-zinc-800 outline-none"
+                readOnly
+                value={
+                  toolResultText ||
+                  "Tool result data will appear here after the agent calls MCP tools."
+                }
+              />
+            </details>
           </Panel>
 
           <Panel title="MCP Tool Trace">
