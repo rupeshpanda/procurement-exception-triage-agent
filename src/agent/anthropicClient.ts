@@ -81,8 +81,13 @@ export class AnthropicModelClient implements ModelClient {
     });
 
     if (!response.ok) {
+      // Log detail server-side only. Upstream error bodies can echo request
+      // fields, so they must never propagate into a client-visible message.
       const text = await response.text();
-      throw new Error(`Anthropic request failed: ${response.status} ${text}`);
+      console.error(`Anthropic request failed: ${response.status} ${text}`);
+      throw new Error(
+        `The Claude API request failed with status ${response.status}. Check the server logs and the ANTHROPIC_API_KEY / ANTHROPIC_MODEL configuration.`
+      );
     }
 
     const payload = (await response.json()) as {
