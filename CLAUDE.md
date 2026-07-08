@@ -41,12 +41,24 @@ Architect exam practice. Read README.md for full architecture.
 
 ## Next steps
 
-1. **Add `ANTHROPIC_API_KEY` in Vercel** (Project → Settings → Environment
-   Variables → Production) and redeploy — until then, prod runs the mock
-   planner. `vercel env add ANTHROPIC_API_KEY production` also works.
+1. **Rotate the Anthropic API key** — the first key was accidentally pasted
+   into ANTHROPIC_MODEL and echoed in a public API error response before the
+   error-sanitization fix landed. Create a new key at console.anthropic.com,
+   update it in Vercel (Production), redeploy, and delete the old key.
 2. Add a Lab card on eleganceai.ai linking to the production URL.
 3. Optional: point a subdomain (e.g. labs.eleganceai.ai) at the Vercel project.
 4. Do not merge this app into the eleganceai.ai codebase unless explicitly asked.
+
+## Live-mode status (2026-07-08, later session)
+
+- Production is on live Claude Haiku (`mode: anthropic`), verified end to end:
+  real tool-use loops, hook block on $42K action redirecting to escalation,
+  ~$0.005–0.006 per triage run.
+- Env-var gotchas learned: piping values via PowerShell `echo` can store empty
+  strings — use bash `printf 'value' | vercel env add ...`. Sensitive vars
+  pull as empty from `vercel env pull`; that is expected.
+- Upstream Anthropic error bodies are logged server-side only and never
+  returned to clients (they can echo request fields).
 
 ## Working agreements
 
